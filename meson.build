@@ -3,9 +3,19 @@ project('telemetry_server',['cpp'],version:'0.1',license:'GPLv2+',default_option
 sources=[
   'src/main.cpp'
 ]
-includes=[]
+includes=[
+  include_directories('subprojects/config_loader/include')
+]
 
-deps=[]
+lib_config_loader_dep= dependency('lib_config_loader',required: false)
+if not lib_config_loader_dep.found()
+  lib_config_loader_proj = subproject('config_loader')
+  lib_config_loader_dep = lib_config_loader_proj.get_variable('lib_config_loader_dep')
+endif
+
+deps=[
+  lib_config_loader_dep
+]
 
 doxygen=find_program('doxygen',required : false)
 if doxygen.found()
