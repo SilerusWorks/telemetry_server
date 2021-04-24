@@ -11,10 +11,9 @@
 #ifndef CONFIG_LOADER_HPP
 #define CONFIG_LOADER_HPP
 #include <string>
-#include <map>
-
+#include "device_config.hpp"
 using std::string;
-using std::map;   
+
 class config_loader{
 public:
   config_loader(){};
@@ -28,6 +27,7 @@ private:
   string base_password{};
   string base_db_name{"telemetry_server"};
   string polled_devices_config_path{};
+  shared_ptr<map<string, shared_ptr<device_config>>> device_map{};
   
 };
 

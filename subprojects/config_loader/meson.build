@@ -2,7 +2,8 @@ project('config_loader',['cpp'],version:'0.1',license:'GPLv2+',default_options:[
 
 sources=[
   'src/config_loader.cpp',
-  'src/device_config.cpp'
+  'src/device_config.cpp',
+  'src/connection_config.cpp'
 ]
 includes=[
   include_directories('include')
