@@ -1,0 +1,45 @@
+
+* TODO  Сервер сбора телеметрии.
+
+** TODO Считывание конфигурационных данных.
+
+*** DONE Организовать структуру хранения настроек вида:
+    CLOSED: [2021-04-26 Пн 16:22]
+   #+name: tree
+   #+BEGIN_SRC ditaa
+   /
+   |
+   +-home
+      |
+      +user_name
+        |
+        +.config
+	 |
+         +telementry_server
+	  |
+          +general_config.json  
+   #+end_src
+   #+name: tree
+   #+BEGIN_SRC ditaa
+    telemetry_server
+     |
+     +configs
+      |
+      +devices
+      |
+      +connections
+      |
+      +models
+   #+end_src
+
+** DONE Создать класс считывающий настройки из файла general_config.json
+   CLOSED: [2021-04-26 Пн 15:03]
+
+** DONE Создать класс считывающий настрой устройств.
+   CLOSED: [2021-04-27 Вт 11:26]
+
+** DONE Создать класс считывающий настройки соединений.
+   CLOSED: [2021-04-30 Пт 15:25]
+
+** TODO Создать класс считывающий настройки моделей.
+

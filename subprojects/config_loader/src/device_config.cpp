@@ -12,6 +12,7 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <list>
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
 #include <rapidjson/error/error.h>
@@ -26,19 +27,81 @@ extern std::atomic_bool sqllog_crit_enable;
 extern std::atomic_bool sqllog_warn_enable;
 extern std::atomic_bool sqllog_info_enable;
 namespace fs = std::filesystem;
-
+using std::list;
 shared_ptr<map<string, shared_ptr<device_config>>>
 device_config::parse_device_config_files(const string &config_path) {
   if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
       syslog_info_enable.load())
     openlog("telemetry_server", LOG_PID | LOG_PERROR, LOG_USER);
+
   fs::path path(config_path);
-  path /= "device_config.json";
+  path /= "configs";
+  path /= "devices";
+  if (!fs::exists(path)) {
+    syslog(LOG_CRIT, "Отсутсвует директория хранения настроек опрашиваемых "
+                     "устройств, дальнейшая загрузка приложения не возможно.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
+  }
+  list<string> file_list;
+  for (auto iter : fs::directory_iterator(path)) {
+    if (iter.path().string().find(".json") != string::npos)
+      file_list.push_back(iter.path().string());
+  }
+  if (file_list.empty()) {
+    syslog(LOG_CRIT, "Отсутствуют файлы хранения настроек опрашиваемых "
+                     "устройств, дальнейшая загрузка приложения не возможно.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
+  }
+  if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+      syslog_info_enable.load())
+    closelog();
+  shared_ptr<map<string, shared_ptr<device_config>>> result{};
+
+  for (auto iter : file_list) {
+    auto buffer = parse_device_config_file(iter);
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      openlog("telemetry_server", LOG_PID | LOG_PERROR, LOG_USER);
+    if (!buffer) {
+      if (syslog_warn_enable)
+        syslog(LOG_WARNING, "Не удалось добавить настройки из файла %s",
+               iter.c_str());
+      continue;
+    }
+    if (result->contains(buffer->get_id())) {
+      if (syslog_warn_enable)
+        syslog(LOG_WARNING,
+               "Не удалось добавить настройки из файла %s,настройка с таким "
+               "id{%s} уже присутствует.",
+               iter.c_str(), buffer->get_id().c_str());
+      continue;
+    }
+    result->insert({buffer->get_id(), buffer});
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+  }
+  return result;
+}
+
+shared_ptr<device_config>
+device_config::parse_device_config_file(const string &config_path) {
+  shared_ptr<device_config> result{};
+  if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+      syslog_info_enable.load())
+    openlog("telemetry_server", LOG_PID | LOG_PERROR, LOG_USER);
+  fs::path path(config_path);
   if (!fs::exists(path)) {
     if (syslog_crit_enable.load())
       syslog(LOG_CRIT,
-             "Отсутствует конфигурационный файл описания опрашиваемых "
-             "устройств, запуск приложения не возможно.");
+             "Отсутствует конфигурационный файл %s описания опрашиваемых "
+             "устройств.",config_path.c_str());
     if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
         syslog_info_enable.load())
       closelog();
@@ -51,92 +114,80 @@ device_config::parse_device_config_files(const string &config_path) {
   if (!ok) {
     if (syslog_crit_enable.load())
       syslog(LOG_CRIT,
-             "Синтаксическая ошибка, %s, в файле, описание опрашиваемых "
-             "устройств, приложение не может быть запущено.",
-             rapidjson::GetParseError_En(ok.Code()));
+             "Синтаксическая ошибка, %s, в файле %s, описание опрашиваемых "
+             "устройств.",
+             rapidjson::GetParseError_En(ok.Code()),config_path.c_str());
     if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
         syslog_info_enable.load())
       closelog();
     return nullptr;
   }
-  if (!doc.HasMember("devices")) {
-    if (syslog_crit_enable.load())
-      syslog(LOG_CRIT,
-             "В файле, описания настроек опрашиваемых устройств, отсутствует "
-             "описание устройств, приложение не может быть запущенно");
+  if (!doc.HasMember("device-id")) {
+    if (syslog_warn_enable.load())
+      syslog(LOG_WARNING,
+             "Отсутсвует поле device-id, настройка будет проигнорирована.");
     if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
         syslog_info_enable.load())
       closelog();
     return nullptr;
   }
-  auto buffer_map = shared_ptr<map<string, shared_ptr<device_config>>>(
-      new map<string, shared_ptr<device_config>>);
-  int i = 0;
-  for (auto &device : doc["devices"].GetArray()) {
-    ++i;
-    if (!device.HasMember("device-id")) {
-      if (syslog_warn_enable.load())
-        syslog(LOG_WARNING,
-               "Отсутсвует поле device-id, %d настройка будет проигнорирована.",
-               i);
-      continue;
-    }
-    if (!device["device-id"].IsString()) {
-      if (syslog_warn_enable.load())
-        syslog(
-            LOG_WARNING,
-            "Тип поля device-id не верен, %d настройка будет проигнорирована.",
-            i);
-      continue;
-    }
-    string device_id(device["device-id"].GetString(),
-                     device["device-id"].GetStringLength());
-    if (!device.HasMember("type")) {
-      if (syslog_warn_enable.load())
-        syslog(LOG_WARNING,
-               "Отсутсвует поле type, %d настройка будет проигнорирована.", i);
-      continue;
-    }
-    if (!device["connection"].IsString()) {
-      if (syslog_warn_enable.load())
-        syslog(
-            LOG_WARNING,
-            "Тип поля connection не верен, %d настройка будет проигнорирована.",
-            i);
-      continue;
-    }
-    string device_connection(device["connection"].GetString(),
-                             device["connection"].GetStringLength());
-    if (!device.HasMember("model")) {
-      if (syslog_warn_enable.load())
-        syslog(LOG_WARNING,
-               "Отсутсвует поле model, %d настройка будет проигнорирована.", i);
-      continue;
-    }
-    if (!device["model"].IsString()) {
-      if (syslog_warn_enable.load())
-        syslog(LOG_WARNING,
-               "Тип поля model не верен, %d настройка будет проигнорирована.",
-               i);
-      continue;
-    }
-    string device_model(device["model"].GetString(),
-                        device["model"].GetStringLength());
-    if (buffer_map->contains(device_id)) {
-      if (syslog_warn_enable.load())
-        syslog(LOG_WARNING,
-               "Настройка %s уже добавлена, наcтрока будет проигнорирована.",
-               device_id.c_str());
-      continue;
-    }
-    
-    buffer_map->insert({device_id, shared_ptr<device_config>(new device_config(device_id, device_connection, device_model))});
-    if (syslog_info_enable.load())
-      syslog(LOG_INFO, "Добавлена настройка устройства id = %s",
-             device_id.c_str());
+  if (!doc["device-id"].IsString()) {
+    if (syslog_warn_enable.load())
+      syslog(LOG_WARNING,
+             "Тип поля device-id не верен, настройка будет проигнорирована.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
   }
+  string device_id(doc["device-id"].GetString(),
+                   doc["device-id"].GetStringLength());
+  if (!doc.HasMember("connection-id")) {
+    if (syslog_warn_enable.load())
+      syslog(LOG_WARNING,
+             "Отсутсвует поле type, настройка будет проигнорирована.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
+  }
+  if (!doc["connection-id"].IsString()) {
+    if (syslog_warn_enable.load())
+      syslog(
+          LOG_WARNING,
+          "Тип поля connection-id не верен, настройка будет проигнорирована.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
+  }
+  string device_connection_id(doc["connection-id"].GetString(),
+                              doc["connection-id"].GetStringLength());
+  if (!doc.HasMember("model-id")) {
+    if (syslog_warn_enable.load())
+      syslog(LOG_WARNING,
+             "Отсутсвует поле model-id, настройка будет проигнорирована.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
+  }
+  if (!doc["model-id"].IsString()) {
+    if (syslog_warn_enable.load())
+      syslog(LOG_WARNING,
+             "Тип поля model-id не верен, настройка будет проигнорирована.");
+    if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
+        syslog_info_enable.load())
+      closelog();
+    return nullptr;
+  }
+  string device_model_id(doc["model-id"].GetString(),
+                         doc["model-id"].GetStringLength());
+  result.reset(
+      new device_config(device_id, device_connection_id, device_model_id));
   if (syslog_crit_enable.load() || syslog_warn_enable.load() ||
       syslog_info_enable.load())
     closelog();
-  return buffer_map;
+
+  return result;
 }

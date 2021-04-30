@@ -15,20 +15,20 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <utility>
+
 
 using std::list;
 using std::map;
 using std::shared_ptr;
 using std::string;
-using std::pair;
+
 
 enum class enum_role { master, slave };
 enum class enum_type { tcp, udp, uart };
 enum class enum_flow_control { none, software, hardware };
 enum class enum_parity { none, odd, even };
 enum class enum_stop_bits { one, one_pont_five, two };
-enum class enum_data_bits { five, six, seven, eight, nine };
+enum class enum_data_bits { five=5, six=6, seven=7, eight=8, nine=9 };
 class connection_config {
 public:
   connection_config(const string &conn_id, const enum_role &conn_role,
@@ -116,6 +116,6 @@ private:
   list<string> tcp_udp_listen_addresses;
   string uart_port{};
   std::size_t await_time{30};
-  static pair<string,shared_ptr<connection_config>> parse_connection_config_file(const string &config_path);
+  static shared_ptr<connection_config> parse_connection_config_file(const string &config_path);
 };
 #endif // CONNECTION_CONFIG_HPP
